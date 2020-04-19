@@ -1,2 +1,2 @@
 ### eBPF-log System
-Collect connection log from package.
+Collect connection log from HTTP requests.
