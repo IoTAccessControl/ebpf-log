@@ -1,5 +1,4 @@
 # coding: utf-8
-# created at 2020/4/18
 from __future__ import print_function
 from bcc import BPF
 from bcc.utils import printb
@@ -614,13 +613,15 @@ def task15_nodejs_server():
 	# 3. sudo apt-get install -y nodejs
 	
 	# 安装http-server模块：https://www.npmjs.com/package/http-server
-	# 启动nodejs server: 
-	#
-	# 测试：
+	# 启动nodejs server: http-server
+	# 测试： curl http://127.0.0.1:8080 
 
 	"""
 	需要自己build node (./configure --with-dtrace)
 	http://www.brendangregg.com/blog/2016-10-12/linux-bcc-nodejs-usdt.html
+
+	sudo trace -p `pgrep -n http` 'u:/usr/local/bin/node:http__server__request "%s %s %s", arg3, arg5, arg6'
+	sudo trace -p 2282 'u:/usr/local/bin/node:http__server__response "%d %s %s", arg2, arg3, arg4'
 	"""
 	from bcc import BPF, USDT
 	p = """
@@ -634,14 +635,26 @@ def task15_nodejs_server():
 		return 0;
 	};
 	"""
-	pid = 6816 
+	pid = 2282
 	u = USDT(pid=int(pid))
 	u.enable_probe(probe="http__server__request", fn_name="do_trace")
 	print(u.get_text())
 
 	# initialize BPF
 	b = BPF(text=p, usdt_contexts=[u])
-	b = USDT(text=p)
+	# header
+	print("%-18s %-16s %-6s %s" % ("TIME(s)", "COMM", "PID", "ARGS"))
+
+	# format output
+	while 1:
+		try:
+			(task, pid, cpu, flags, ts, msg) = b.trace_fields()
+		except ValueError:
+			print("value error")
+			continue
+		except KeyboardInterrupt:
+			exit()
+		printb(b"%-18.9f %-16s %-6d %s" % (ts, task, pid, msg))
 
 def task16_task_switch():
 	b = BPF(src_file="task_switch.c")
