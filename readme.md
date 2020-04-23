@@ -7,6 +7,6 @@ Project structure and directories,
 /----
  |http                  # http filter
  |simple_http_server    # simple node http test server for debugging, handle GET/POST requests
- |start                 # tutorials for learning eBPF
+ |start                 # quick start tutorials for eBPF
 
 ```

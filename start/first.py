@@ -556,7 +556,7 @@ def task14_strlen_count():
 	counts = b.get_table("counts")
 	print(counts)
 	for k, v in sorted(counts.items(), key=lambda counts: counts[1].value):
-		print("%10d \"%s\"" % (v.value, k.c.encode('string-escape')))
+		print("%10d \"%s\"" % (v.value, k.c))
 		print(type(k.c), k.c)
 	print(b.trace_fields())
 
@@ -604,7 +604,7 @@ def task14_strlen_copy():
 	#得到c函数中定义的hash表，然后排序打印出来
 	counts = b.get_table("counts")
 	for k, v in sorted(counts.items(), key=lambda counts: counts[1].value):
-		print("%10d \"%s\"" % (v.value, k.c.encode('string-escape')))
+		print("%10d \"%s\"" % (v.value, k.c))
 
 def task15_nodejs_server():
 	# 安装nodejs（不可行）：
@@ -680,9 +680,9 @@ def main():
 	# task11_vfsreadlat()
 	# task12_urandomread()
 	# task13_fix_disksnoop()
-	# task14_strlen_count()
+	task14_strlen_count()
 	# task14_strlen_copy() # 仍然有问题
-	task15_nodejs_server()
+	# task15_nodejs_server()
 	# task16_task_switch()
 
 
