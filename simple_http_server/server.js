@@ -27,7 +27,12 @@ var server = http.createServer(function (req, res) {
     if (req.method === "GET") {
         console.log('[%s] "%s %s"', new Date().toISOString(), req.method, req.url)
         res.writeHead(200, { "Content-Type": "text/html" });
-        fs.createReadStream("index.html", "UTF-8").pipe(res);
+        // 需要主动调用 end
+        // fs.createReadStream("index.html", "UTF-8").pipe(res);
+        fs.readFile("index.html", "UTF-8", function(err, data){ 
+            res.end(data);
+        }); 
+        // res.end("get data long data");
     } else if (req.method === "POST") {
         var body = "POST: ";
         req.on("data", function (chunk) {

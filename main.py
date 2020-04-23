@@ -6,10 +6,10 @@ def setup():
     # logging.basicConfig(filename='run.log',level=logging.DEBUG)
     logging.basicConfig(level=logging.DEBUG)
 
-def run_http_filter(threads):
-    from http.filter import main as http_main
-    th = threading.Thread(target=http_main, daemon=True)
-    logging.info("Starting http_filter")
+def run_tcp_filter(threads):
+    from tcp.filter import main as tcp_main
+    th = threading.Thread(target=tcp_main, daemon=True)
+    logging.info("Starting tcp_filter")
     th.start()
     threads.append(th)
     
@@ -17,7 +17,7 @@ def run_http_filter(threads):
 def main():
     setup()
     threads = []
-    run_http_filter(threads)
+    run_tcp_filter(threads)
 
     for thd in threads:
         thd.join()

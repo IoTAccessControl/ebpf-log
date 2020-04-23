@@ -9,9 +9,15 @@ TODO:
 https://github.com/iovisor/bcc/blob/c2e2a26b8624492018a14d5eebd4a50b869c911f/examples/networking/vlan_filter/data-plane-tracing.c
 
 
-2. 总结要点
+2. 实现方法
+tcp层不要去判断是否是http，统一交给应用层处理。(HTTP或者纯json数据)
 
 */
+
+// ---------可替换配置
+#define SRC_IP 0
+
+// ---------
 
 #define IP_TCP 	6
 #define ETH_HLEN 14
@@ -128,22 +134,24 @@ int handle_pkt(struct __sk_buff *skb) {
 			goto DROP;
 		}
 		
-		if (is_http_pkt(skb, payload_offset)) {
-			goto HTTP_MATCH;
-		} 
+		goto KEEP;
 
-		// no HTTP match
-		// check if packet belong to an HTTP session
-		struct Leaf * lookup_leaf = sessions.lookup(&key);
-		if(lookup_leaf) {
-			//send packet to userspace
-			goto KEEP;
-		}
-		goto DROP;
+		// if (is_http_pkt(skb, payload_offset)) {
+		// 	goto HTTP_MATCH;
+		// } 
+
+		// // no HTTP match
+		// // check if packet belong to an HTTP session
+		// struct Leaf * lookup_leaf = sessions.lookup(&key);
+		// if(lookup_leaf) {
+		// 	//send packet to userspace
+		// 	goto KEEP;
+		// }
+		// goto DROP;
 	}
 
 HTTP_MATCH:
-	bpf_trace_printk("tcp: %d %d\n", 14, payload_offset);
+	// bpf_trace_printk("tcp: %d %d\n", 14, payload_offset);
 	sessions.lookup_or_try_init(&key, &zero);
 
 KEEP:

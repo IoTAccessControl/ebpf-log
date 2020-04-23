@@ -11,7 +11,8 @@ import logging
 import ipaddress 
 import binascii
 from collections import namedtuple
-from http.policy_monitor import policy_manager
+from tcp.policy_monitor import policy_monitor
+from utils import bpf_tool
 
 __author__ = "fripSide"
 
@@ -28,7 +29,12 @@ TcpEndpoint = namedtuple("TcpEndpoint", ["ip_src", "ip_dst", "port_src", "port_d
 
 def bpf_hook_socket():
 	# initialize BPF - load source code from http-parse-simple.c
-	bpf = BPF(src_file=CONFIG.http_filter_ebpf, debug = 0)
+	params = {
+		# "SRC_IP": CONFIG.src_ip,
+	}
+	bpf_text = bpf_tool.load_bpf_text(CONFIG.http_filter_ebpf, params)
+
+	bpf = BPF(text=bpf_text, debug = 0)
 	# print(dir(bpf))
 	# print(bpf.dump_func("my_filter"))
 
@@ -92,19 +98,21 @@ class TcpSession:
 			if self.__is_http_end(tcp_payload):
 				del self.first_pkt[pkt_key]
 				self.__delete_bpf_session(key)
-			return tcp_payload
+			return True
 
 		if key in self.bpf_sessions:
 			if pkt_key in self.first_pkt:
+				# http数据有多个tcp包
 				if self.__is_http_end(tcp_payload):
 					del self.first_pkt[pkt_key]
 					self.__delete_bpf_session(key)
+				return True
 			else:
 				# first part of the HTTP GET/POST url is
 				# NOT present in local dictionary
 				# bpf_sessions contains invalid entry -> delete it
 				self.__delete_bpf_session(key)
-		return None
+		return False
 
 	def __dump_key(self, ky):
 		return ky.dst_ip, ky.src_ip, ky.src_port, ky.dst_port
@@ -222,10 +230,14 @@ def dispatch_pkt(data, tcp_session):
 	session_key = tcp_session.get_key(ip_src, port_src, ip_dst, port_dst)
 
 	# get http data
-	ret = tcp_session.is_valid_http_data(session_key, tcp_payload)
-	if ret:
-		policy_manager.append_http_data(tcp_endpoint, tcp_payload)
-	tcp_session.try_to_clean()
+	# ret = tcp_session.is_valid_http_data(session_key, tcp_payload)
+	# print(tcp_payload)
+	# if ret:
+	# 	policy_monitor.append_http_data(tcp_endpoint, tcp_payload)
+	# tcp_session.try_to_clean()
+
+	# 在应用层处理数据
+	policy_monitor.process_data(tcp_endpoint, tcp_payload)
 
 def main():
 	bpf, socket_fd = bpf_hook_socket()
