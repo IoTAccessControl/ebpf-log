@@ -1,7 +1,7 @@
 #include <uapi/linux/ptrace.h>
 #include <net/sock.h>
 #include <bcc/proto.h>
-#include "utils.h"
+#include "ebpf/utils.h"
 
 /*
 TODO:
@@ -66,16 +66,9 @@ static __always_inline int is_http_pkt(struct __sk_buff *skb, u32 payload_offset
 	return 0;
 }
 
+// 注意变量最好初始化在最前面，防止不小心goto跳过了初始化
 int handle_pkt(struct __sk_buff *skb) {
 	u8 *cursor = 0;
-	ethernet: {
-		struct ethernet_t *ethernet = cursor_advance(cursor, sizeof(*ethernet));
-		switch (ethernet->type) {
-			case 0x0800: goto ip;
-			default: goto DROP;
-		}
-	}
-
 	struct Key 	key;
 	struct Leaf zero = {0};
 	u32 tcp_header_length = 0;
@@ -83,6 +76,14 @@ int handle_pkt(struct __sk_buff *skb) {
 	u32 ip_total_length = 0;
 	u32 payload_offset = 0;
 	u32 payload_length = 0;
+
+	ethernet: {
+		struct ethernet_t *ethernet = cursor_advance(cursor, sizeof(*ethernet));
+		switch (ethernet->type) {
+			case 0x0800: goto ip;
+			default: goto DROP;
+		}
+	}
 
 	ip: {
 		struct ip_t *ip = cursor_advance(cursor, sizeof(*ip));
@@ -96,7 +97,7 @@ int handle_pkt(struct __sk_buff *skb) {
 		}
 	
 		//shift cursor forward for dynamic ip header size
-        void *_ = cursor_advance(cursor, (ip_header_length-sizeof(*ip)));
+		void *_ = cursor_advance(cursor, (ip_header_length-sizeof(*ip)));
 
 		switch (ip->nextp) {
 			case IP_TCP: goto tcp;
@@ -106,6 +107,9 @@ int handle_pkt(struct __sk_buff *skb) {
 
 	tcp: {
 		struct tcp_t *tcp = cursor_advance(cursor, sizeof(*tcp));
+
+		key.src_port = tcp->src_port;
+		key.dst_port = tcp->dst_port;
 
 		//calculate tcp header length
 		//value to multiply *4
@@ -130,17 +134,17 @@ int handle_pkt(struct __sk_buff *skb) {
 
 		// no HTTP match
 		// check if packet belong to an HTTP session
-		// struct Leaf * lookup_leaf = sessions.lookup(&key);
-		// if(lookup_leaf) {
-		// 	//send packet to userspace
-		// 	goto KEEP;
-		// }
+		struct Leaf * lookup_leaf = sessions.lookup(&key);
+		if(lookup_leaf) {
+			//send packet to userspace
+			goto KEEP;
+		}
 		goto DROP;
 	}
 
 HTTP_MATCH:
-	bpf_trace_printk("tcp: %d %d\n", 12, payload_offset);
-	//sessions.lookup_or_try_init(&key,&zero);
+	bpf_trace_printk("tcp: %d %d\n", 14, payload_offset);
+	sessions.lookup_or_try_init(&key, &zero);
 
 KEEP:
 	return -1;

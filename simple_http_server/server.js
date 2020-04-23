@@ -23,18 +23,19 @@ var fs = require('fs');
 console.log("Starting up simple-http-server.\n Available on:\n http://127.0.0.1:3000/")
 
 var server = http.createServer(function (req, res) {
-    console.log('[%s] "%s %s"', new Date().toISOString(), req.method, req.url)
-
+    
     if (req.method === "GET") {
+        console.log('[%s] "%s %s"', new Date().toISOString(), req.method, req.url)
         res.writeHead(200, { "Content-Type": "text/html" });
         fs.createReadStream("index.html", "UTF-8").pipe(res);
     } else if (req.method === "POST") {
-        var body = "";
+        var body = "POST: ";
         req.on("data", function (chunk) {
             body += chunk;
         });
 
         req.on("end", function(){
+            console.log('[%s] "%s %s" %s', new Date().toISOString(), req.method, req.url, body)
             res.writeHead(200, { "Content-Type": "text/html" });
             res.end(body);
         });
