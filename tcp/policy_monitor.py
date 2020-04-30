@@ -1,66 +1,61 @@
 # coding: utf-8
-
-# try to import C parser then fallback in pure python parser.
-try:
-    from http_parser.parser import HttpParser
-except ImportError:
-    from http_parser.pyparser import HttpParser
+from conf import CONFIG
+from tcp.protocol_parser import RequestHandler
+from detecting.log_context import LogWriter
 
 __author__ = "fripSide"
 
-class HTTPLog:
+"""
+TODO:
+1. 提取三种请求，写到log
+2. 实时用决策树来判断log
+3. 尝试xdp程序截断请求
+"""
+
+class BlockAction:
+
+	def __init__(self):
+		self.block = True
+		self.device_addr = ""
+		self.devcie_id = ""
+		self.action = ""
+		self.property = ""
+
+class BlockRulesManager:
 
 	def __init__(self):
 		pass
 
-class HTTPHandler:
-	
-	def __init__(self):
-		self.parser = HttpParser()
-		self.body = []
+	def block(self, rule):
+		pass
 
-	def process(self, tcp_endpoint, payload):
-		p = self.parser
-		recved = len(payload)
-		nparsed = p.execute(payload, recved)
-		assert(recved == nparsed)
-		# print(recved, nparsed)
-		# if p.is_headers_complete():
-			# print(p.get_headers())
+	def unblock(self, rule):
+		pass
 
-		if p.is_partial_body():
-			# print("is_partial_body")
-			self.body.append(p.recv_body())
-
-		# if p.is_message_complete():
-			# print("message is complete")
-		return p.is_message_complete()
-
-	def reset(self):
-		self.parser = HttpParser()
-		self.body = []
 
 class PolicyMonitor:
 
 	def __init__(self):
-		self.http_handlers = {}
-		self.http_requests = []
+		self.request_handler = RequestHandler()
+		self.log_writer = LogWriter()
+		self.__init_platform()
+
+	def __init_platform(self):
+		if CONFIG.platform == CONFIG.PLAT_WEBTHINGS:
+			from detecting.webthings import WebThingsRequestHandler
+			self.request_handler = WebThingsRequestHandler()
 
 	def process_data(self, tcp_endpoint, payload):
-		print(tcp_endpoint, payload)
+		log_entry = self.request_handler.process(tcp_endpoint, payload)
+		if log_entry:
+			self.record_log(log_entry)
+			self.anormal_detecting(log_entry)
 
-	def append_http_data(self, tcp_endpoint, payload):
-		# print("add data to ", tcp_endpoint, payload)
-		if not tcp_endpoint in self.http_handlers:
-			self.http_handlers[tcp_endpoint] = HTTPHandler()
-		handler = self.http_handlers[tcp_endpoint]
-		# print(payload)
-		if handler.process(tcp_endpoint, payload):
-			self.add_http_record(tcp_endpoint, handler)
-			handler.reset()
+	def record_log(self, log_entry):
+		self.log_writer.append_log(log_entry)
 
-	def add_http_record(self, tcp_endpoint, handler):
-		print(tcp_endpoint, handler.body)
+	def anormal_detecting(self, log_entry):
+		pass
 
+block_rules = BlockRulesManager()
 policy_monitor = PolicyMonitor()
-

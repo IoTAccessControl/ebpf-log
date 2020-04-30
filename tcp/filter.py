@@ -7,6 +7,7 @@ import sys
 import struct
 import socket
 import os
+import ctypes
 import logging
 import ipaddress 
 import binascii
@@ -29,10 +30,11 @@ TcpEndpoint = namedtuple("TcpEndpoint", ["ip_src", "ip_dst", "port_src", "port_d
 
 def bpf_hook_socket():
 	# initialize BPF - load source code from http-parse-simple.c
+	host_ip, host_port = bpf_tool.convert_host_addr(CONFIG.host_ip)
 	params = {
-		# "SRC_IP": CONFIG.src_ip,
+		"HOST_IP": hex(host_ip or 0),
 	}
-	bpf_text = bpf_tool.load_bpf_text(CONFIG.http_filter_ebpf, params)
+	bpf_text = bpf_tool.load_bpf_prog(CONFIG.http_filter_ebpf, params)
 
 	bpf = BPF(text=bpf_text, debug = 0)
 	# print(dir(bpf))
@@ -42,6 +44,7 @@ def bpf_hook_socket():
 	#more info about eBPF program types
 	#http://man7.org/linux/man-pages/man2/bpf.2.html
 	function_http_filter = bpf.load_func(CONFIG.http_ebpf_section, BPF.SOCKET_FILTER)
+	bpf_tool.bpf_dump_func(bpf, CONFIG.http_ebpf_section, CONFIG.http_filter_ebpf)
 
 	#create raw socket, bind it to interface
 	#attach bpf program to socket created
@@ -61,9 +64,11 @@ def print_trace_log(b):
 	if not CONFIG.debug:
 		return
 	try:
-		(task, pid, cpu, flags, ts, msg) = b.trace_fields(nonblocking=True)
-		if msg:
-			print("trace log:", msg)
+		while True:
+			(task, pid, cpu, flags, ts, msg) = b.trace_fields(nonblocking=True)
+			if msg:
+				print("trace log:", msg)
+				break
 	except ValueError:
 		pass
 
@@ -161,6 +166,16 @@ class TcpSession:
 			except:
 				logging.warning("cleanup exception.")
 
+def load_server_filters(bpf):
+	bpf_server_endpoints = bpf.get_table("server_endpoints")
+	# print(dir(bpf_server_endpoints.Key))
+	for host in CONFIG.target_servers:
+		host_ip, host_port = bpf_tool.convert_host_addr(host)
+		key = bpf_server_endpoints.Key(ip=ctypes.c_uint(host_ip), port=host_port)
+		val = bpf_server_endpoints.Leaf(1)
+		bpf_server_endpoints[key] = val
+		logging.info(f"Register server filter: [{host_ip}, {host_port}]")
+
 def dispatch_pkt(data, tcp_session):
 	# 从IP包开始解析数据
 	packet_bytearray = bytearray(data)
@@ -241,6 +256,7 @@ def dispatch_pkt(data, tcp_session):
 
 def main():
 	bpf, socket_fd = bpf_hook_socket()
+	load_server_filters(bpf)
 	bpf_sessions = bpf.get_table("sessions")
 	tcp_session = TcpSession(bpf_sessions)
 	while True:

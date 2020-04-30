@@ -5,6 +5,7 @@ from bcc.utils import printb
 import sys
 import socket
 import os
+import ctypes
 
 
 __author__ = "fripSide"
@@ -666,6 +667,68 @@ def task16_task_switch():
 	for k, v in b["stats"].items():
 		print("task_switch[%5d->%5d]=%u" % (k.prev_pid, k.curr_pid, v.value))
 
+def task17_test_share_status():
+	"""
+	# 应用层和bpf层share数据
+	# 测试 for 循环, bounded loops
+	"""
+	bpf_text = """
+	#include <uapi/linux/ptrace.h>
+	BPF_HASH(last);
+
+	static __always_inline void test_loop() {
+		for (int i = 0; i < 20; i++) {
+			bpf_trace_printk("log %d\\n", i);
+		}
+	}
+
+	int kprobe__sys_clone(void *ctx) {
+		u64 key = 0, *val;
+		test_loop();
+		val = last.lookup(&key);
+		if (val == 0) {
+			u64 t = 1;
+			last.update(&key, &t);
+		} else {
+			bpf_trace_printk("print hello message: %d\\n", *val);
+		}
+		
+		return 0;
+	}
+	int kprobe__sys_sync(void *ctx) {
+		u64 *val, key = 0;
+		val = last.lookup(&key);
+		if (val == 0) {
+			u64 t = 1;
+			last.update(&key, &t);
+		} else if (*val == 2) {
+			bpf_trace_printk("Hello, sys_sync!\\n"); 
+		}
+		
+		return 0;
+	}
+	"""
+	b = BPF(text=bpf_text)
+	print("%-18s %-16s %-6s %s" % ("TIME(s)", "COMM", "PID", "GOTBITS"))
+
+	ULONG_PTR = ctypes.c_ulong
+	# format output
+	cnt = 0
+	while True:
+		try:
+			print("dump last items")
+			for kv, val in b["last"].items():
+				print(kv, val, type(val))
+			(task, pid, cpu, flags, ts, msg) = b.trace_fields()
+			cnt += 1
+			print(msg, cnt)
+			if cnt > 3:
+				k = ctypes.c_ulong(0)
+				b["last"][k] = ctypes.c_ulong(2)
+		except KeyboardInterrupt:
+  			print("exit!")
+			exit(0)
+
 
 def main():
 	# task2_sys_sync()
@@ -680,10 +743,11 @@ def main():
 	# task11_vfsreadlat()
 	# task12_urandomread()
 	# task13_fix_disksnoop()
-	task14_strlen_count()
+	# task14_strlen_count()
 	# task14_strlen_copy() # 仍然有问题
 	# task15_nodejs_server()
 	# task16_task_switch()
+	task17_test_share_status()
 
 
 if __name__ == "__main__":
