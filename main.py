@@ -12,10 +12,17 @@ def setup():
 		logging.error("Require python version >= 3.6.")
 		exit(-1)
 
-def run_tcp_filter():
+def run_tcp_log_monitor():
 	from tcp.filter import main as tcp_main
 	th = threading.Thread(target=tcp_main, daemon=True)
-	logging.info("Starting tcp_filter")
+	logging.info("Starting tcp_filter.")
+	th.start()
+	threads.append(th)
+
+def run_xdp_policy():
+	from tcp.xdp_policy import main as policy_main
+	th = threading.Thread(target=policy_main, daemon=True)
+	logging.info("Starting xdp policy manager.")
 	th.start()
 	threads.append(th)
 
@@ -25,14 +32,20 @@ def wait_to_exit():
 
 def main():
 	setup()
-	run_tcp_filter()
+	# run_tcp_log_monitor()
+	run_xdp_policy()
 	wait_to_exit()
 	logging.info("Exit.")
+
+def cleanup():
+	import tcp.xdp_policy as xdp_policy
+	xdp_policy.release()
 
 if __name__ == "__main__":
 	main()
 	try:
-	# except KeyboardInterrupt:
+		pass
+	except KeyboardInterrupt:
 		logging.info("Exit by ctrl-c.")
 	finally:
 		exit(0)

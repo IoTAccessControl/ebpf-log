@@ -97,8 +97,17 @@ class LogContext:
 
 
 class LogWriter:
+	MAX_LOG_PRE_FILE = 10000
 
 	def __init__(self):
+		self.count = 0
+		self.fp = None
+		self.__reset()
+
+	def __reset(self):
+		self.count = 0
+		if self.fp:
+			self.fp.close()
 		tag = self.__get_timestamp()
 		self.fp = open(f"iot-log/{tag}.log", "w")
 
@@ -107,6 +116,9 @@ class LogWriter:
 		return ti.strftime("%Y%m%d%H%M%S")
 
 	def append_log(self, log_entry):
+		self.count += 1
+		if self.count > MAX_LOG_PRE_FILE:
+			self.__reset()
 		data = log_entry.to_json()
 		self.fp.write(data)
 		self.fp.write("\n")
