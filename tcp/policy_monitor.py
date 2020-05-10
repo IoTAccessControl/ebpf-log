@@ -2,6 +2,7 @@
 from conf import CONFIG
 from tcp.protocol_parser import RequestHandler
 from detecting.log_context import LogWriter
+from tcp.xdp_policy import add_to_blacklist
 
 __author__ = "fripSide"
 
@@ -23,13 +24,21 @@ class BlockAction:
 		self.action = ""
 		self.property = ""
 
+	def get_ingress_client_addr(self):
+		"""
+		对于tcp请求，在gateway的ingress流量处，利用xdp拦截client端的包。
+		不能拦截server端。
+		"""
+		pass
+
 class BlockRulesManager:
 
 	def __init__(self):
 		pass
 
 	def block(self, rule):
-		pass
+		# 
+		add_to_blacklist("127.0.0.1", 3000)
 
 	def unblock(self, rule):
 		pass

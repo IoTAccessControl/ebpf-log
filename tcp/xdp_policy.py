@@ -18,12 +18,15 @@ version 1:
 
 
 class BlockEndpoint:
+	# 由于xdp只能拦截ingress包，因此需要精确的通过source 或者 dest 指定client的addr去拦截，避免把整个server都拦截了
+	SRC_DENY = 1
+	DEST_DENY = 2
 
 	def __init__(self):
 		self.ip = 0
 		self.port = 0
 		self.keyword = ""
-		self.allow = False
+		self.action = 0
 
 	def get_key(self):
 		return f"{self.ip}:{self.port}"
@@ -31,7 +34,7 @@ class BlockEndpoint:
 	def __eq__(self, other):
 		if isinstance(other, BlockEndpoint):
 			return self.ip == other.ip and self.port == other.port and \
-				self.keyword == other.keyword and self.allow == other.allow
+				self.keyword == other.keyword and self.action == other.action
 		return False
 
 	def __ne__(self, other):
@@ -46,15 +49,14 @@ class BlockEndpoint:
 		https://docs.python.org/3/library/ctypes.html#fundamental-data-types
 		"""
 		class Key(ct.Structure):
-			_fields_  = [("ip", ct.c_uint32), ("port", ct.c_ushort), ("buf", ct.c_char * 64)]
+			_fields_  = [("ip", ct.c_uint32), ("port", ct.c_ushort)]
 
 		class Leaf(ct.Structure):
-			_fields_  = [("allow", ct.c_bool)]
+			_fields_  = [("action", ct.c_uint32),  ("buf", ct.c_char * 64)]
 
 		ip = int(ipaddress.IPv4Address(self.ip))
-		key = Key(ip, self.port)
-		key.buf = self.keyword.encode("utf-8")
-		return key, Leaf(self.allow)
+		buf = self.keyword.encode("utf-8")
+		return Key(ip, self.port), Leaf(self.action, buf)
 
 class XDPBlackList:
 
@@ -117,8 +119,11 @@ class BpfXDPLoader:
 		self.xdp_maps.clear()
 		for k, item in self.cur_rules.items():
 			key, val = item.get_ctype_data()
-			self.xdp_maps[key] = val
-		# print(type(self.xdp_maps.Key), dir(self.xdp_maps.Key))
+			logging.info("Add block rule: action[%d] ip[%d] port[%d].", val.action, key.ip, key.port)
+			nk = self.xdp_maps.Key(ip=key.ip, port=key.port)
+			self.xdp_maps[nk] = val
+		# for k, item in self.xdp_maps.items():
+		# 	print("xdp maps", k.ip, k.port, item.action)
 
 	def unload_xdp_prog(self):
 		if not self.xdp_loaded:
@@ -137,13 +142,21 @@ class BpfXDPLoader:
 		if not self.xdp_loaded:
 			self.__load_xdp_prog()
 		self.__update_xdp_maps()
+
+	def debug_log(self):
+		def print_event(cpu, data, size):
+			event = self.xdp["events"].event(data)
+			print("process pkt, version:", event.version, " action:", event.action, "->", str(ipaddress.IPv4Address(event.src_addr)), event.src_port, 
+				str(ipaddress.IPv4Address(event.dst_addr)), event.dst_port)
+		self.xdp["events"].open_perf_buffer(print_event)
+		self.xdp.perf_buffer_poll()
 		
-def add_to_blacklist(src_ip, src_port, keyword="", allow=False):
+def add_to_blacklist(src_ip, src_port, action=1, keyword=""):
 	endpoint = BlockEndpoint()
 	endpoint.ip = src_ip
 	endpoint.port = src_port
 	endpoint.keyword = keyword
-	endpoint.allow = allow
+	endpoint.action = action
 	xdp_blacklist.append_black_list(endpoint)
 
 def bpf_test():
@@ -173,9 +186,10 @@ xdp_loader = BpfXDPLoader()
 
 def main():
 	# bpf_test()
-	add_to_blacklist("127.0.0.1", 3000)
+	# add_to_blacklist("127.0.0.1", 3000)
 	while True:
 		xdp_loader.process_blacklist()
+		xdp_loader.debug_log()
 
 @atexit.register
 def release_xdp():

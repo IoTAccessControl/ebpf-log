@@ -26,12 +26,16 @@ xdp只能拦截进来的包，tx流量
 // source port
 struct EndPoint {
 	unsigned short port;
-	u32 ipadr;
-	char buf[10]; // check websocket buffer keyward
+	u32 ip;
 };
 
+#define RULE_ALLOW 0
+#define SRC_DENY   1
+#define DEST_DENY  2
+
 struct Rule {
-	bool allow;
+	u32 action; // 0: allow, 1: src deny 2: dst deny
+	char buf[10]; // check websocket buffer keyward
 };
 
 BPF_HASH(blacklist, struct EndPoint, struct Rule, 1024);
@@ -39,20 +43,37 @@ BPF_HASH(blacklist, struct EndPoint, struct Rule, 1024);
 #define DPORT 3000
 
 static __always_inline
-bool check_blacklist(struct iphdr *iph, struct tcphdr *tcph) {
-
-
+bool check_content(void *start, void *data_end) {
+	return true;
 }
 
 static __always_inline
-bool check_content(void *start, void *data_end) {
-
+bool check_blacklist(struct iphdr *iph, struct tcphdr *tcph) {
+	struct EndPoint addr = {};
+	addr.port = ntohs(tcph->dest);
+	addr.ip = ntohl(iph->daddr);
+	// dest 
+	struct Rule *lookup_rule = blacklist.lookup(&addr);
+	if (lookup_rule != NULL) {
+		if (lookup_rule->action == DEST_DENY) {
+			return false;
+		}
+	}
+	addr.port = ntohs(tcph->source);
+	addr.ip = ntohl(iph->saddr);
+	lookup_rule = blacklist.lookup(&addr);
+	if (lookup_rule != NULL) {
+		if (lookup_rule->action == SRC_DENY) {
+			return false;
+		}
+	}
+	return true;
 }
 
 static __always_inline
 u32 check_tcp_policy(struct iphdr *iph, struct tcphdr *tcph, void *data_end) {
-	if (tcph->dest == htons(DPORT) || tcph->source == htons(DPORT)) {
-		
+	// if (tcph->dest == htons(DPORT) || tcph->source == htons(DPORT)) {
+	if (!check_blacklist(iph, tcph)) {
 		return XDP_DROP;
 	}
 	return XDP_PASS;
@@ -108,15 +129,18 @@ int xdp_firewall(struct xdp_md *ctx) {
 	}
 
 	action = check_tcp_policy(iph, tcph, data_end);
+	
+	if (action == XDP_DROP) {
+		// log
+		struct data_t ds = {};
+		ds.version = 1;
+		ds.src_addr = ntohl(iph->saddr);
+		ds.src_port = ntohs(tcph->source);
+		ds.dst_addr = ntohl(iph->daddr);
+		ds.dst_port = ntohs(tcph->dest);
+		ds.action = action;
+		events.perf_submit(ctx, &ds, sizeof(ds));
+	}
 
-	// log
-	struct data_t ds = {};
-	ds.version = 1;
-	// ds.src_addr = ntohl(iph->saddr);
-	// ds.src_port = ntohs(tcph->source);
-	// ds.dst_addr = ntohl(iph->daddr);
-	// ds.dst_port = ntohs(tcph->dest);
-	// ds.action = action;
-	// events.perf_submit(ctx, &ds, sizeof(ds));
 	return action;
 }
